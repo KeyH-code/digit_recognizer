@@ -8,7 +8,7 @@ def make_train_transform(std,mean):
     )
     return train_transform
 
-def val_transform(std,mean):
+def make_val_transform(std,mean):
     val_transform = v2.Compose(
         [
             v2.Normalize(std=std,mean=mean)

@@ -1,12 +1,14 @@
 from sklearn.model_selection import train_test_split
 import torch
-from process_data import TRAIN_MEAN,TRAIN_STD,train_img,labels_img,train_img
+from process_data import img,labels
 from torch.utils.data import Dataset,DataLoader
 
 SEED = 20260915
+DEVICE = torch.device("cuda")
+BATCH_SIZE = 64
 
 # 划分数据
-def make_split(train_img,val_img,test_size,seed,shuffle,stratify):
+def make_split(train_img,test_size,seed,shuffle,stratify):
     full_indices = len(train_img)
     train_indices,val_indices = train_test_split(
         full_indices,
@@ -16,7 +18,7 @@ def make_split(train_img,val_img,test_size,seed,shuffle,stratify):
         stratify=stratify
     )
     train_set = train_img[train_indices]
-    val_set = val_img[val_indices]
+    val_set = train_img[val_indices]
     train_label = stratify[train_indices]
     val_label = stratify[val_indices]
     return train_set,val_set,train_label,val_label
@@ -43,7 +45,7 @@ def make_dataset(images,labels,trainsform):
     return dataset
 
 # 创建数据加载器
-def make_loader(dataset,batch_size,shuffle,generator):
+def make_loader(dataset,batch_size,shuffle,generator=None):
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -56,4 +58,13 @@ def make_loader(dataset,batch_size,shuffle,generator):
 # 创建generator
 def make_generator(seed):
     generator = torch.Generator().manual_seed(seed)
+
+test_size = 1/4
+train_set,val_set,train_label,val_label = make_split(img,test_size,SEED,True,labels)
+
+train_tensor = torch.tensor(train_set,device=DEVICE,dtype=torch.float32)
+
+
+TRAIN_STD = train_tensor.std(dim=(0,2,3)).tolist()
+TRAIN_MEAN = train_tensor.mean(dim=(0,2,3)).tolist()
 
