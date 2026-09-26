@@ -10,11 +10,11 @@ test_path = base_dir/"data"/"test.csv"
 train_read = pd.read_csv(train_path)
 test_read = pd.read_csv(test_path)
 
-labels_pd = train_read["label"].values.astype("float32")
+labels_pd = train_read["label"].values.astype("int64")
 feature_pd = train_read.drop(columns=["label"]).values.astype("float32")
 
-img = feature_pd.reshape(-1,1,28,28)
-labels = labels_pd.reshape(feature_pd.shape[0],1)
+img = feature_pd.reshape(-1,1,28,28)    
+labels = labels_pd 
 
 
 

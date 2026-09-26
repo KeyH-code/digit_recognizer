@@ -2,6 +2,7 @@ from sklearn.model_selection import train_test_split
 import torch
 from process_data import img,labels
 from torch.utils.data import Dataset,DataLoader
+import numpy as np
 
 SEED = 20260915
 DEVICE = torch.device("cuda")
@@ -9,7 +10,7 @@ BATCH_SIZE = 64
 
 # 划分数据
 def make_split(train_img,test_size,seed,shuffle,stratify):
-    full_indices = len(train_img)
+    full_indices = np.arange(len(train_img))
     train_indices,val_indices = train_test_split(
         full_indices,
         test_size=test_size,
@@ -34,7 +35,7 @@ class Digit_dataset(Dataset):
         return len(self.dataset)
 
     def __getitem__(self, index):
-        image = self.transform(self.dataset[index])
+        image = torch.from_numpy(np.asarray(self.dataset[index])).float()
         label = self.label[index]
 
         return image,label

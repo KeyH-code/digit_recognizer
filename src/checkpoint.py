@@ -13,7 +13,7 @@ def make_checkpoint(model,epoch,best_acc,optimizer,scaler):
     }
 
 def save_checkpoint(path,checkpoint):
-    torch.save(path,checkpoint)
+    torch.save(checkpoint,path)
 
 def load_checkpoint(path,weights_only,map_location):
     return torch.load(path,weights_only=weights_only,map_location=map_location)

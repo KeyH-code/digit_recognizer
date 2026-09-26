@@ -8,6 +8,8 @@ from data import make_split,make_dataset,make_generator,make_loader,SEED,train_s
 from process_data import img,labels,base_dir
 from transform import make_train_transform,make_val_transform
 from pathlib import Path
+from checkpoint import load_checkpoint,make_checkpoint,save_checkpoint
+import numpy as np
 
 
 
@@ -60,7 +62,7 @@ class Digit_CNN(nn.Module):
         result = self.classification(output)
         return result
 
-def one_epoch(model,loader,optimizer,critirion,scaler=None):
+def train_one_epoch(model,loader,optimizer,critirion,scaler=None):
     model.train()
 
     all_loss = []
@@ -88,9 +90,10 @@ def one_epoch(model,loader,optimizer,critirion,scaler=None):
             pred = logits.argmax(dim=1)
 
             mask = pred != y
-            all_error["false_pred"] = pred[mask]
-            all_error["true_label"] = y[mask]
-            all_error["confidence"] = logits.max(dim=1)
+            all_error["false_pred"].extend(pred[mask].detach().cpu().tolist())
+            all_error["true_label"].extend(y[mask].detach().cpu().tolist())
+            all_error["confidence"].extend(logits.max(dim=1).values[mask].detach().float().cpu().tolist())
+
 
             correct += (pred == y).sum().item()
             all_pred.extend(pred.detach().cpu().tolist())
@@ -103,9 +106,9 @@ def one_epoch(model,loader,optimizer,critirion,scaler=None):
             pred = logits.argmax(dim=1)
 
             mask = pred != y
-            all_error["false_pred"] = pred[mask]
-            all_error["true_label"] = y[mask]
-            all_error["confidence"] = logits.max(dim=1)
+            all_error["false_pred"].extend(pred[mask])
+            all_error["true_label"].extend(y[mask])
+            all_error["confidence"].extend(logits.max(dim=1))
 
             correct += (pred == y).sum().item()
             all_loss.append(loss.item())
@@ -115,6 +118,64 @@ def one_epoch(model,loader,optimizer,critirion,scaler=None):
 
         loss_sum += loss.item()*x.size(0)
         samples_count += x.size(0)
+    avg_loss = loss_sum/samples_count
+    avg_accu = correct/samples_count
+    if avg_accu > best_acc:
+        best_acc = avg_accu
+
+    return avg_loss,avg_accu,all_loss,all_pred,all_error,best_acc
+
+def valuate(model,loader,optimizer,critirion,scaler=None):
+    model.eval()
+
+    all_loss = []
+    all_pred = []
+    all_error = {
+        "false_pred":[],
+        "true_label":[],
+        "confidence":[]
+    }
+    samples_count = 0
+    loss_sum = 0
+    correct = 0
+    best_acc = 0.0
+    with torch.inference_mode():
+        for x,y in loader:
+            x = x.to(DEVICE)
+            y = y.to(DEVICE)
+            optimizer.zero_grad(set_to_none=True)
+
+            if scaler is not None:
+                with torch.autocast(device_type=DEVICE.type,dtype=torch.float16):
+                    logits = model(x)
+                    loss = critirion(logits,y)
+                all_loss.append(loss.item())            
+                pred = logits.argmax(dim=1)
+
+                mask = pred != y
+                all_error["false_pred"].extend(pred[mask])
+                all_error["true_label"].extend(y[mask])
+                all_error["confidence"].extend(logits.max(dim=1))
+
+
+                correct += (pred == y).sum().item()
+                all_pred.extend(pred.detach().cpu().tolist())
+            else:
+                logits = model(x)
+                loss = critirion(logits,y)
+                pred = logits.argmax(dim=1)
+
+                mask = pred != y
+                all_error["false_pred"].extend(pred[mask])
+                all_error["true_label"].extend(y[mask])
+                all_error["confidence"].extend(logits.max(dim=1))
+
+                correct += (pred == y).sum().item()
+                all_loss.append(loss.item())
+                all_pred.extend(pred.detach().cpu().tolist())
+
+            loss_sum += loss.item()*x.size(0)
+            samples_count += x.size(0)
     avg_loss = loss_sum/samples_count
     avg_accu = correct/samples_count
     if avg_accu > best_acc:
@@ -132,6 +193,8 @@ def main():
     model.to(DEVICE)
     config_name = "config01"
     config = load_config(config_name)
+    torch.manual_seed(config["SEED"])
+    np.random.seed(config["SEED"])
     optimizer = make_optimizer(config["optimizer"],config["lr"],model.parameters())
 
     scaler = torch.GradScaler()
@@ -145,10 +208,25 @@ def main():
     train_genertor = torch.Generator().manual_seed(config["SEED"])
     train_loader = make_loader(train_dataset,config["batch_size"],True,train_genertor)
 
-    val_loader = make_loader(val_dataset,config["config"],False)
+    val_loader = make_loader(val_dataset,config["batch_size"],False)
 
     criterion = nn.CrossEntropyLoss()
-    
+
+    last_checkpoint_path = base_dir/Path("checkpoint")/Path("last.pt")
+    best_checkpoint_path = base_dir/Path("checkpoint")/Path("best.pt")
+
+    last_checkpoint_path.parent.mkdir(parents=True,exist_ok=True)
+    best_checkpoint_path.parent.mkdir(parents=True,exist_ok=True)
+    best_accuracy = 0.0
     for epoch in range(config["epoch"]):
-        train_avg_loss,train_avg_accu,_,_,_,_ = one_epoch(model,train_loader,optimizer,criterion,scaler)
-        val_avg_loss,val_avg_accu,all_loss,all_pred,all_error,best_acc = one_epoch(model,val_loader,optimizer,criterion,scaler)
+        train_avg_loss,train_avg_accu,_,_,_,_ = train_one_epoch(model,train_loader,optimizer,criterion,scaler)
+        val_avg_loss,val_avg_accu,all_loss,all_pred,all_error,best_acc = valuate(model,val_loader,optimizer,criterion,scaler)
+        if best_acc > best_accuracy:
+            best_accuracy = best_acc
+            best_checkpoint = make_checkpoint(model,epoch,best_accuracy,optimizer,scaler)
+            save_checkpoint(best_checkpoint_path,best_checkpoint)
+        last_checkpoint = make_checkpoint(model,epoch,best_accuracy,optimizer,scaler)
+        save_checkpoint(last_checkpoint_path,last_checkpoint)
+            
+if __name__ == "__main__":
+    main()

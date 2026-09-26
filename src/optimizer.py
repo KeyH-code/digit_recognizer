@@ -6,7 +6,7 @@ def make_optimizer(type,lr,params):
             params=params,
             lr=lr
         )
-    elif type == "Adam":
+    elif type == "AdamW":
         return torch.optim.AdamW(
             params=params,
             lr=lr,
