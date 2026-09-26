@@ -16,6 +16,10 @@ feature_pd = train_read.drop(columns=["label"]).values.astype("float32")
 img = feature_pd.reshape(-1,1,28,28)    
 labels = labels_pd 
 
+test_pd = test_read.values.astype("float32")
+test_img = test_pd.reshape(-1,1,28,28)
+
+
 
 
 

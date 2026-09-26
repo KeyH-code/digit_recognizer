@@ -189,6 +189,11 @@ def load_config(name):
     config = json.loads(Path(config_path).read_text(encoding="utf-8"))
     return config
 
+def load_model_parameter_only(model,path):
+    checkpoint = torch.load(path,map_location=DEVICE,weights_only=False)
+    model.load_state_dict(checkpoint["model_state_dict"])
+
+
 def main():
     model = Digit_CNN(1)
     model.to(DEVICE)
