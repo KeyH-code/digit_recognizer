@@ -1,0 +1,7 @@
+{
+    "SEED":20260926,
+    "batch_size":64,
+    "epoch":20,
+    "optimizer":"AdamW",
+    "lr":0.001
+}

@@ -62,7 +62,18 @@ class Digit_CNN(nn.Module):
         result = self.classification(output)
         return result
 
-def train_one_epoch(model,loader,optimizer,critirion,scaler=None):
+def gather_errors(all_error,pred,y,logits,mask):
+    false_pred = pred[mask].detach().cpu().tolist()
+    all_error["false_pred"].extend(false_pred)
+    true_label = y[mask].detach().cpu().tolist()
+    all_error["true_label"].extend(true_label)
+    confidence = logits.softmax(dim=1).max(dim=1).values[mask].detach().cpu().tolist()
+    all_error["confidence"].extend(confidence)
+
+    return all_error
+
+
+def train_one_epoch(model,loader,optimizer,critirion,epoch,scaler=None):
     model.train()
 
     all_loss = []
@@ -75,7 +86,6 @@ def train_one_epoch(model,loader,optimizer,critirion,scaler=None):
     samples_count = 0
     loss_sum = 0
     correct = 0
-    best_acc = 0.0
 
     for x,y in loader:
         x = x.to(DEVICE)
@@ -90,9 +100,7 @@ def train_one_epoch(model,loader,optimizer,critirion,scaler=None):
             pred = logits.argmax(dim=1)
 
             mask = pred != y
-            all_error["false_pred"].extend(pred[mask].detach().cpu().tolist())
-            all_error["true_label"].extend(y[mask].detach().cpu().tolist())
-            all_error["confidence"].extend(logits.max(dim=1).values[mask].detach().float().cpu().tolist())
+            all_error = gather_errors(all_error,pred,y,logits,mask)
 
 
             correct += (pred == y).sum().item()
@@ -106,9 +114,7 @@ def train_one_epoch(model,loader,optimizer,critirion,scaler=None):
             pred = logits.argmax(dim=1)
 
             mask = pred != y
-            all_error["false_pred"].extend(pred[mask])
-            all_error["true_label"].extend(y[mask])
-            all_error["confidence"].extend(logits.max(dim=1))
+            all_error = gather_errors(all_error,pred,y,logits,mask)
 
             correct += (pred == y).sum().item()
             all_loss.append(loss.item())
@@ -120,12 +126,12 @@ def train_one_epoch(model,loader,optimizer,critirion,scaler=None):
         samples_count += x.size(0)
     avg_loss = loss_sum/samples_count
     avg_accu = correct/samples_count
-    if avg_accu > best_acc:
-        best_acc = avg_accu
 
-    return avg_loss,avg_accu,all_loss,all_pred,all_error,best_acc
+    print(f"train epoch {epoch}  avg_loss: {avg_loss}  avg_accu:{avg_accu}")
 
-def valuate(model,loader,optimizer,critirion,scaler=None):
+    return avg_loss,avg_accu,all_loss,all_pred,all_error
+
+def valuate(model,loader,optimizer,critirion,epoch,scaler=None):
     model.eval()
 
     all_loss = []
@@ -138,7 +144,6 @@ def valuate(model,loader,optimizer,critirion,scaler=None):
     samples_count = 0
     loss_sum = 0
     correct = 0
-    best_acc = 0.0
     with torch.inference_mode():
         for x,y in loader:
             x = x.to(DEVICE)
@@ -153,9 +158,7 @@ def valuate(model,loader,optimizer,critirion,scaler=None):
                 pred = logits.argmax(dim=1)
 
                 mask = pred != y
-                all_error["false_pred"].extend(pred[mask])
-                all_error["true_label"].extend(y[mask])
-                all_error["confidence"].extend(logits.max(dim=1))
+                all_error = gather_errors(all_error,pred,y,logits,mask)
 
 
                 correct += (pred == y).sum().item()
@@ -166,9 +169,7 @@ def valuate(model,loader,optimizer,critirion,scaler=None):
                 pred = logits.argmax(dim=1)
 
                 mask = pred != y
-                all_error["false_pred"].extend(pred[mask])
-                all_error["true_label"].extend(y[mask])
-                all_error["confidence"].extend(logits.max(dim=1))
+                all_error = gather_errors(all_error,pred,y,logits,mask)
 
                 correct += (pred == y).sum().item()
                 all_loss.append(loss.item())
@@ -178,10 +179,10 @@ def valuate(model,loader,optimizer,critirion,scaler=None):
             samples_count += x.size(0)
     avg_loss = loss_sum/samples_count
     avg_accu = correct/samples_count
-    if avg_accu > best_acc:
-        best_acc = avg_accu
 
-    return avg_loss,avg_accu,all_loss,all_pred,all_error,best_acc
+    print(f"val epoch {epoch}  avg_loss: {avg_loss}  avg_accu:{avg_accu}")
+
+    return avg_loss,avg_accu,all_loss,all_pred,all_error
 
 def load_config(name):
     config_path = base_dir/"config"/name
@@ -191,7 +192,7 @@ def load_config(name):
 def main():
     model = Digit_CNN(1)
     model.to(DEVICE)
-    config_name = "config01"
+    config_name = "config01.json"
     config = load_config(config_name)
     torch.manual_seed(config["SEED"])
     np.random.seed(config["SEED"])
@@ -219,14 +220,15 @@ def main():
     best_checkpoint_path.parent.mkdir(parents=True,exist_ok=True)
     best_accuracy = 0.0
     for epoch in range(config["epoch"]):
-        train_avg_loss,train_avg_accu,_,_,_,_ = train_one_epoch(model,train_loader,optimizer,criterion,scaler)
-        val_avg_loss,val_avg_accu,all_loss,all_pred,all_error,best_acc = valuate(model,val_loader,optimizer,criterion,scaler)
-        if best_acc > best_accuracy:
-            best_accuracy = best_acc
+        train_avg_loss,train_avg_accu,_,_,_ = train_one_epoch(model,train_loader,optimizer,criterion,epoch,scaler)
+        val_avg_loss,val_avg_accu,all_loss,all_pred,all_errorc = valuate(model,val_loader,optimizer,criterion,epoch,scaler)
+        if val_avg_accu > best_accuracy:
+            best_accuracy = val_avg_accu
             best_checkpoint = make_checkpoint(model,epoch,best_accuracy,optimizer,scaler)
             save_checkpoint(best_checkpoint_path,best_checkpoint)
         last_checkpoint = make_checkpoint(model,epoch,best_accuracy,optimizer,scaler)
         save_checkpoint(last_checkpoint_path,last_checkpoint)
+        
             
 if __name__ == "__main__":
     main()

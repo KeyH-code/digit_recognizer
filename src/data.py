@@ -37,8 +37,9 @@ class Digit_dataset(Dataset):
     def __getitem__(self, index):
         image = torch.from_numpy(np.asarray(self.dataset[index])).float()
         label = self.label[index]
+        image_transform = self.transform(image)
 
-        return image,label
+        return image_transform,label
 
 # 创建数据集
 def make_dataset(images,labels,trainsform):
